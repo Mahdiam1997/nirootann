@@ -1,4 +1,4 @@
-name: Diagnose and recover stuck Nirootan Pages deployment
+name: Diagnose Nirootan GitHub Pages publication
 on:
   push:
     paths:
@@ -9,26 +9,28 @@ permissions:
   pages: write
   deployments: write
 jobs:
-  diagnose-and-release:
+  diagnose:
     runs-on: ubuntu-latest
     steps:
-      - name: Inspect Pages configuration and deployment history
+      - name: Check public website HTTP response
+        run: |
+          set +e
+          curl -L --silent --show-error --max-time 15 --output /tmp/nirootan-page.html --write-out 'Site HTTP status: %{http_code}; redirect: %{url_effective}; bytes: %{size_download}\n' https://saaiet.github.io/nirootan/
+          head -c 220 /tmp/nirootan-page.html
+          echo
+      - name: Query GitHub Pages and stale deployment states
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          echo 'GitHub Pages configuration:'
-          gh api "repos/${GITHUB_REPOSITORY}/pages" --jq '{url, status, source}' || true
-          echo 'GitHub Pages deployments:'
-          gh api "repos/${GITHUB_REPOSITORY}/deployments?environment=github-pages&per_page=8" --jq '.[] | {id, sha, environment, created_at}' || true
-      - name: Cancel blocking Pages deployment 93e5618
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -eu
-          gh api -X POST "repos/${GITHUB_REPOSITORY}/pages/deployments/93e56184edaa1a3e739a8ae9b036d7d5cc106f3a/cancel"
-          echo 'Official Pages cancellation endpoint returned success.'
-      - name: Inspect deployments after cancellation
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh api "repos/${GITHUB_REPOSITORY}/deployments?environment=github-pages&per_page=8" --jq '.[] | {id, sha, environment, created_at}' || true
+          echo '--- Site status ---'
+          gh api "repos/${GITHUB_REPOSITORY}/pages" --jq '{html_url, status, source, public, https_enforced}' || true
+          echo '--- Pages deployments endpoint ---'
+          gh api "repos/${GITHUB_REPOSITORY}/pages/deployments" --jq '.[] | {id, status, commit_sha}' || true
+          echo '--- Environment ---'
+          gh api "repos/${GITHUB_REPOSITORY}/environments/github-pages" --jq '{name, protection_rules, deployment_branch_policy}' || true
+          echo '--- All deployments and latest statuses ---'
+          for id in $(gh api "repos/${GITHUB_REPOSITORY}/deployments?environment=github-pages&per_page=12" --jq '.[].id'); do
+            echo "--- deployment $id ---"
+            gh api "repos/${GITHUB_REPOSITORY}/deployments/$id" --jq '{id, sha, environment, original_environment, task, created_at, updated_at}' || true
+            gh api "repos/${GITHUB_REPOSITORY}/deployments/$id/statuses?per_page=3" --jq '.[]|{id, state, description, created_at, environment_url}' || true
+          done
