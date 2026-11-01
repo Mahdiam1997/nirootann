@@ -1,0 +1,19 @@
+name: Recover stuck Nirootan Pages deployment
+on:
+  push:
+    paths:
+      - .github/workflows/recover-pages.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+  pages: write
+jobs:
+  release-stale-pages-deployment:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Cancel stale GitHub Pages deployment blocking new publishes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          gh api -X POST "repos/${GITHUB_REPOSITORY}/pages/deployments/93e56184edaa1a3e739a8ae9b036d7d5cc106f3a/cancel"
